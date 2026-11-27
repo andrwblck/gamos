@@ -1338,7 +1338,7 @@ function drawTitle(){
   ctx.font='italic 24px Georgia'; ctx.fillStyle='rgba(243,234,214,.7)'; ctx.fillText('Попелясті Глибини', cx, 336);
   const a = .55+.45*Math.sin(game.t*3);
   ctx.font='20px Georgia'; ctx.fillStyle=`rgba(255,220,170,${a})`;
-  ctx.fillText(hasSave ? 'Enter — продовжити      N — нова гра' : 'Натисни Enter, щоб почати', cx, 410);
+  ctx.fillText(hasSave ? 'Enter — продовжити      N — нова гра' : 'Натисни Enter або клікни, щоб почати', cx, 410);
   ctx.font='14px Georgia'; ctx.fillStyle='rgba(220,210,190,.55)';
   ctx.fillText('←→ рух · Z стрибок · X удар · C ривок · F лікування · M мапа · Esc пауза  (геймпад теж працює)', cx, 480);
 }
@@ -1395,6 +1395,7 @@ function fit(){
   cv.style.width = Math.floor(VW*s)+'px'; cv.style.height = Math.floor(VH*s)+'px';
 }
 addEventListener('resize', fit); fit();
+cv.addEventListener('pointerdown', () => { window.focus(); initAudio(); if(game.mode==='title' || game.mode==='ending') pressedQ['Enter']=true; });
 requestAnimationFrame(frame);
 
 // debug/testing hook
