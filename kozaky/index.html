@@ -1,0 +1,764 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Козаки-розбійники</title>
+<style>
+  :root { --ink:#1d2a1f; --paper:#f4efe1; --accent:#d9472b; --gold:#ffcf4a; --leaf:#3f7a3a; }
+  html,body { margin:0; height:100%; overflow:hidden; background:#9cc3d9; color:var(--paper);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; user-select:none; -webkit-user-select:none; touch-action:none; }
+  canvas#gl { display:block; position:fixed; inset:0; width:100%; height:100%; }
+  #hud { position:fixed; inset:0; pointer-events:none; }
+  .panel { position:absolute; background:rgba(20,30,22,.62); border-radius:10px; padding:10px 14px; }
+  #top { left:50%; transform:translateX(-50%); top:12px; text-align:center; min-width:240px; }
+  #phase { font-size:13px; letter-spacing:.08em; text-transform:uppercase; opacity:.85; }
+  #timer { font-size:30px; font-weight:700; font-variant-numeric:tabular-nums; }
+  #left { left:12px; top:12px; font-size:15px; line-height:1.7; }
+  #left b { color:var(--gold); font-variant-numeric:tabular-nums; }
+  .bar { width:180px; height:8px; background:rgba(255,255,255,.18); border-radius:4px; overflow:hidden; margin-top:4px; }
+  .bar > i { display:block; height:100%; width:50%; background:var(--gold); border-radius:4px; }
+  #mini { position:absolute; right:12px; top:12px; border-radius:10px; background:rgba(20,30,22,.62); }
+  #msg { position:absolute; left:50%; bottom:22%; transform:translateX(-50%); font-size:20px; font-weight:600;
+    text-align:center; text-shadow:0 2px 6px rgba(0,0,0,.7); transition:opacity .3s; white-space:pre-line; }
+  #hint { position:absolute; left:50%; bottom:14px; transform:translateX(-50%); font-size:13px; opacity:.85; text-align:center; }
+  #eye { position:absolute; left:50%; top:96px; transform:translateX(-50%); font-size:14px; font-weight:700; padding:4px 12px; border-radius:20px; }
+  #cross { position:absolute; left:50%; top:50%; width:6px; height:6px; margin:-3px 0 0 -3px; border-radius:50%; background:rgba(255,255,255,.6); }
+  #overlay { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:rgba(16,26,18,.82); pointer-events:auto; }
+  #card { max-width:640px; margin:16px; padding:26px 30px; background:var(--paper); color:var(--ink); border-radius:14px; box-shadow:0 20px 60px rgba(0,0,0,.4); }
+  #card h1 { margin:0 0 4px; font-size:34px; color:var(--accent); }
+  #card h2 { margin:0 0 14px; font-size:15px; font-weight:500; opacity:.7; }
+  #card p, #card li { font-size:15px; line-height:1.5; }
+  #card ul { padding-left:20px; margin:8px 0; }
+  .keys { display:grid; grid-template-columns:auto 1fr; gap:4px 14px; font-size:14px; margin:12px 0; }
+  kbd { background:#e3dccb; border:1px solid #c9bfa8; border-radius:4px; padding:1px 6px; font-family:inherit; font-size:13px; }
+  .row { display:flex; gap:10px; flex-wrap:wrap; margin-top:16px; align-items:center; }
+  button { font:600 16px system-ui,sans-serif; padding:10px 18px; border-radius:9px; border:0; cursor:pointer; background:var(--ink); color:var(--paper); }
+  button.sel { background:var(--accent); }
+  button:focus-visible { outline:3px solid var(--gold); }
+  #touch { position:fixed; inset:0; pointer-events:none; display:none; }
+  #touch.on { display:block; }
+  #stick { position:absolute; left:24px; bottom:24px; width:130px; height:130px; border-radius:50%; background:rgba(255,255,255,.12); border:1px solid rgba(255,255,255,.3); pointer-events:auto; }
+  #knob { position:absolute; left:45px; top:45px; width:40px; height:40px; border-radius:50%; background:rgba(255,255,255,.4); }
+  .tbtn { position:absolute; pointer-events:auto; width:70px; height:70px; border-radius:50%; background:rgba(255,255,255,.14); border:1px solid rgba(255,255,255,.35);
+    display:flex; align-items:center; justify-content:center; font:600 12px system-ui; color:#fff; text-align:center; }
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<div id="hud">
+  <div id="top" class="panel"><div id="phase">Підготовка</div><div id="timer">2:30</div></div>
+  <div id="left" class="panel">
+    Палки: <b id="sticks">0</b> <span style="opacity:.7">(стрілка = 3)</span><br>
+    Стрілки: <b id="arrows">0</b><br>
+    <span id="leashLbl">До останньої стрілки</span>: <b id="leash">0 м</b>
+    <div class="bar"><i id="leashBar"></i></div>
+    <span style="font-size:13px;opacity:.8">Сили</span>
+    <div class="bar"><i id="stamBar" style="background:#7fd38a"></i></div>
+  </div>
+  <canvas id="mini" width="180" height="180"></canvas>
+  <div id="eye"></div>
+  <div id="cross"></div>
+  <div id="msg"></div>
+  <div id="hint"></div>
+</div>
+<div id="touch">
+  <div id="stick"><div id="knob"></div></div>
+  <div class="tbtn" data-k="KeyF" style="right:110px;bottom:24px">Стрілка</div>
+  <div class="tbtn" data-k="ShiftLeft" style="right:24px;bottom:110px">Біг</div>
+  <div class="tbtn" data-k="KeyC" style="right:24px;bottom:24px">Присісти</div>
+  <div class="tbtn" data-k="Enter" style="right:110px;bottom:110px">Готово</div>
+</div>
+<div id="overlay"><div id="card"></div></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+"use strict";
+// =====================================================================
+//  КОЗАКИ-РОЗБІЙНИКИ — народна дворова гра у 3D.
+//  Ти — розбійник. Поки козаки рахують у штабі, шукай палки, викладай
+//  з них стрілки (3 палки = 1 стрілка) і тікай подалі. Потім козаки
+//  підуть по стрілках. Сховайся в кущах і протримайся до кінця.
+// =====================================================================
+
+const PREP_TIME = 150, SEARCH_TIME = 180;
+const HALF = 150;                    // парк: від -150 до 150 м
+const LEASH_WARN = 30, LEASH_MAX = 40;
+const BASE = { x:0, z:110 };
+const POND = { x:55, z:-20, r:20 };
+const DIFF = {
+  easy:   { n:2, chase:5.4, view:24, label:'Легко' },
+  normal: { n:3, chase:6.0, view:30, label:'Нормально' },
+  hard:   { n:4, chase:6.6, view:36, label:'Важко' },
+};
+let diffKey = 'normal';
+
+// ---------------------------------------------------------------- utils
+const clamp=(v,a,b)=>v<a?a:v>b?b:v, lerp=(a,b,t)=>a+(b-a)*t;
+let seed = 12345; const rand = () => { seed = (seed*16807) % 2147483647; return (seed-1)/2147483646; };
+const R = (a,b) => a + rand()*(b-a);
+const angDiff = (a,b) => { let d=(b-a)%(Math.PI*2); if(d>Math.PI) d-=Math.PI*2; if(d<-Math.PI) d+=Math.PI*2; return d; };
+const fmt = s => { s=Math.max(0,Math.ceil(s)); return Math.floor(s/60)+':'+String(s%60).padStart(2,'0'); };
+function hash(x,z){ const s=Math.sin(x*127.1+z*311.7)*43758.5453; return s-Math.floor(s); }
+function vnoise(x,z){ const xi=Math.floor(x), zi=Math.floor(z), xf=x-xi, zf=z-zi, u=xf*xf*(3-2*xf), v=zf*zf*(3-2*zf);
+  return lerp(lerp(hash(xi,zi),hash(xi+1,zi),u), lerp(hash(xi,zi+1),hash(xi+1,zi+1),u), v); }
+
+// ---------------------------------------------------------------- paths
+const PATHS = [
+  [[0,140],[0,110],[-10,70],[-30,30],[-35,-10],[-20,-60],[10,-100],[40,-130]],
+  [[0,110],[30,80],[60,40],[85,10],[90,-40],[70,-80],[30,-100]],
+  [[-140,60],[-90,55],[-50,40],[-30,30],[20,15],[60,40]],
+  [[-35,-10],[-80,-30],[-120,-70],[-140,-110]],
+];
+function segDist(px,pz,ax,az,bx,bz){ const dx=bx-ax, dz=bz-az, t=clamp(((px-ax)*dx+(pz-az)*dz)/(dx*dx+dz*dz),0,1); return Math.hypot(px-ax-dx*t, pz-az-dz*t); }
+function pathDist(x,z){ let d=1e9; for(const p of PATHS) for(let i=0;i<p.length-1;i++) d=Math.min(d, segDist(x,z,p[i][0],p[i][1],p[i+1][0],p[i+1][1])); return d; }
+
+// ---------------------------------------------------------------- terrain
+function height(x,z){
+  let h = 3.2*vnoise(x*.011+3, z*.011+7) + 1.1*vnoise(x*.045, z*.045) - 2;
+  const db = Math.hypot(x-BASE.x, z-BASE.z); if(db<22) h = lerp(.0, h, clamp((db-12)/10,0,1));
+  const dp = Math.hypot(x-POND.x, z-POND.z); if(dp<POND.r+8) h = lerp(-1.6, h, clamp((dp-POND.r+4)/12,0,1));
+  return h;
+}
+const WATER_Y = -.9;
+
+// ---------------------------------------------------------------- three setup
+const canvas = document.getElementById('gl');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias:true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 1.75));
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+const scene = new THREE.Scene();
+scene.background = new THREE.Color('#a9cbe0');
+scene.fog = new THREE.Fog('#a9cbe0', 45, 150);
+const camera = new THREE.PerspectiveCamera(65, 1, .1, 400);
+scene.add(new THREE.HemisphereLight('#dfefff', '#4a5a30', .85));
+const sun = new THREE.DirectionalLight('#fff2d6', .95);
+sun.castShadow = true; sun.shadow.mapSize.set(2048,2048);
+Object.assign(sun.shadow.camera, { left:-45, right:45, top:45, bottom:-45, near:1, far:160 });
+sun.shadow.bias = -.0008;
+scene.add(sun, sun.target);
+
+// ground
+(function(){
+  const seg = 150, g = new THREE.PlaneGeometry(HALF*2+40, HALF*2+40, seg, seg); g.rotateX(-Math.PI/2);
+  const pos = g.attributes.position, col = [], c = new THREE.Color();
+  for(let i=0;i<pos.count;i++){
+    const x=pos.getX(i), z=pos.getZ(i), y=height(x,z); pos.setY(i,y);
+    const pd = pathDist(x,z), n = vnoise(x*.15,z*.15);
+    if(pd<1.8) c.set('#b59a6a').offsetHSL(0,0,(n-.5)*.06);
+    else if(Math.hypot(x-BASE.x,z-BASE.z)<14) c.set('#9aa86a');
+    else if(y < WATER_Y+.3) c.set('#6b6a45');
+    else { c.setHSL(.26+n*.04, .42, .30+n*.1+(x<-30&&z<-20?-.05:0)); }
+    col.push(c.r,c.g,c.b);
+  }
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col,3)); g.computeVertexNormals();
+  const m = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ vertexColors:true }));
+  m.receiveShadow = true; scene.add(m);
+  const w = new THREE.Mesh(new THREE.CircleGeometry(POND.r+1, 48), new THREE.MeshPhongMaterial({ color:'#4d86a8', transparent:true, opacity:.85, shininess:80 }));
+  w.rotation.x = -Math.PI/2; w.position.set(POND.x, WATER_Y, POND.z); scene.add(w);
+})();
+
+// ---------------------------------------------------------------- obstacles grid
+const CELL = 8, grid = new Map();
+const gkey = (cx,cz) => cx*1000+cz;
+function addObs(o){ const cx=Math.floor(o.x/CELL), cz=Math.floor(o.z/CELL), k=gkey(cx,cz); if(!grid.has(k)) grid.set(k,[]); grid.get(k).push(o); }
+function near(x,z,r){ const out=[]; const c0=Math.floor((x-r)/CELL), c1=Math.floor((x+r)/CELL), d0=Math.floor((z-r)/CELL), d1=Math.floor((z+r)/CELL);
+  for(let cx=c0;cx<=c1;cx++) for(let cz=d0;cz<=d1;cz++){ const a=grid.get(gkey(cx,cz)); if(a) for(const o of a) out.push(o); } return out; }
+const trees = [], bushes = [];
+
+function freeSpot(x,z,minPath=2.5){
+  if(Math.abs(x)>HALF-3||Math.abs(z)>HALF-3) return false;
+  if(Math.hypot(x-BASE.x,z-BASE.z)<16) return false;
+  if(Math.hypot(x-POND.x,z-POND.z)<POND.r+2) return false;
+  if(pathDist(x,z)<minPath) return false;
+  for(const o of near(x,z,3)) if(Math.hypot(o.x-x,o.z-z) < o.r+1.4) return false;
+  return true;
+}
+// типи дерев: 0 сосна, 1 дуб/клен, 2 береза, 3 тополя (посадка)
+function addTree(x,z,type){ const s = R(.85,1.25); const t={x,z,type,s,r:type===2?.25:.4, kind:'tree'}; trees.push(t); addObs(t); }
+// посадка: рядки дерев уздовж півночі та сходу
+for(let row=0;row<4;row++) for(let x=-140;x<=140;x+=3.2){ const z=-132+row*3.4; if(freeSpot(x+R(-.4,.4),z,2)) addTree(x+R(-.3,.3), z+R(-.3,.3), row%2?3:2); }
+for(let row=0;row<3;row++) for(let z=-110;z<=60;z+=3.4){ const x=134-row*3.4; if(freeSpot(x,z,2)) addTree(x+R(-.3,.3), z+R(-.3,.3), 3); }
+// соснова діброва на північному заході, мішаний дендропарк деінде
+for(let i=0;i<9000 && trees.length<900;i++){
+  const x=R(-HALF+4,HALF-4), z=R(-HALF+4,HALF-4);
+  const pine = x<-30 && z<-10;
+  const dens = pine ? .55 : (z>70 ? .12 : .28);
+  if(rand()>dens) continue;
+  if(!freeSpot(x,z)) continue;
+  addTree(x,z, pine ? (rand()<.85?0:2) : (rand()<.55?1:(rand()<.5?2:0)));
+}
+for(let i=0;i<4000 && bushes.length<170;i++){
+  const x=R(-HALF+5,HALF-5), z=R(-HALF+5,HALF-5);
+  if(!freeSpot(x,z,2.2)) continue;
+  bushes.push({x,z,r:R(1.4,2.1)});
+}
+
+// instanced meshes for trees
+(function(){
+  const counts=[0,0,0,0]; trees.forEach(t=>counts[t.type]++);
+  const mk = (geo, mat, n) => { const m = new THREE.InstancedMesh(geo, mat, n); m.castShadow = true; m.receiveShadow = true; scene.add(m); return m; };
+  const trunkGeo = new THREE.CylinderGeometry(.18,.28,1,6); trunkGeo.translate(0,.5,0);
+  const trunks = mk(trunkGeo, new THREE.MeshLambertMaterial({color:'#ffffff'}), trees.length);
+  const coneGeo = new THREE.ConeGeometry(1,1,7); coneGeo.translate(0,.5,0);
+  const pines = mk(coneGeo, new THREE.MeshLambertMaterial({color:'#ffffff'}), counts[0]*2);
+  const blobGeo = new THREE.IcosahedronGeometry(1,1);
+  const blobs = mk(blobGeo, new THREE.MeshLambertMaterial({color:'#ffffff'}), counts[1]+counts[2]+counts[3]);
+  const M = new THREE.Matrix4(), q = new THREE.Quaternion(), S = new THREE.Vector3(), P = new THREE.Vector3(), C = new THREE.Color();
+  let ti=0, pi=0, bi=0;
+  for(const t of trees){
+    const y = height(t.x,t.z), s=t.s;
+    q.setFromAxisAngle(new THREE.Vector3(0,1,0), hash(t.x,t.z)*6.28);
+    const th = t.type===0 ? 3.5*s : t.type===2 ? 5*s : t.type===3 ? 6*s : 3*s;
+    const tr = t.type===2 ? .7 : t.type===1 ? 1.5 : 1;
+    M.compose(P.set(t.x,y-.1,t.z), q, S.set(tr*s, th, tr*s)); trunks.setMatrixAt(ti, M);
+    trunks.setColorAt(ti, C.set(t.type===2 ? '#e8e4da' : '#5a4330')); ti++;
+    if(t.type===0){
+      M.compose(P.set(t.x,y+2.0*s,t.z), q, S.set(2.1*s,4.0*s,2.1*s)); pines.setMatrixAt(pi, M); pines.setColorAt(pi, C.setHSL(.36,.45,.2+hash(t.x,1)*.06)); pi++;
+      M.compose(P.set(t.x,y+3.8*s,t.z), q, S.set(1.7*s,3.2*s,1.7*s)); pines.setMatrixAt(pi, M); pines.setColorAt(pi, C.setHSL(.36,.45,.23+hash(t.x,2)*.06)); pi++;
+    } else {
+      let sc, cy;
+      if(t.type===1){ sc=[3*s,2.6*s,3*s]; cy=th+1.4*s; C.setHSL(.24+hash(t.z,3)*.06,.5,.28+hash(t.x,4)*.08); }
+      else if(t.type===2){ sc=[1.7*s,2.6*s,1.7*s]; cy=th+.8*s; C.setHSL(.22,.55,.42+hash(t.z,5)*.06); }
+      else { sc=[1.5*s,4*s,1.5*s]; cy=th+1.5*s; C.setHSL(.27,.5,.3+hash(t.z,6)*.05); }
+      M.compose(P.set(t.x,y+cy,t.z), q, S.set(...sc)); blobs.setMatrixAt(bi, M); blobs.setColorAt(bi, C); bi++;
+    }
+  }
+  [trunks,pines,blobs].forEach(m=>{ m.instanceMatrix.needsUpdate=true; if(m.instanceColor) m.instanceColor.needsUpdate=true; });
+  // кущі
+  const bm = mk(new THREE.IcosahedronGeometry(1,1), new THREE.MeshLambertMaterial({color:'#ffffff'}), bushes.length);
+  bushes.forEach((b,i)=>{ M.compose(P.set(b.x,height(b.x,b.z)+.45,b.z), q.setFromAxisAngle(new THREE.Vector3(0,1,0),i), S.set(b.r,1.2,b.r*.9)); bm.setMatrixAt(i,M); bm.setColorAt(i, C.setHSL(.28+hash(i,7)*.05,.5,.24+hash(i,8)*.08)); });
+  bm.instanceMatrix.needsUpdate=true; bm.instanceColor.needsUpdate=true;
+  // паркан по периметру
+  const posts=[]; for(let a=-HALF;a<=HALF;a+=4){ posts.push([a,-HALF],[a,HALF],[-HALF,a],[HALF,a]); }
+  const pm = mk(new THREE.BoxGeometry(.15,1.1,.15), new THREE.MeshLambertMaterial({color:'#7a6248'}), posts.length);
+  posts.forEach(([x,z],i)=>{ M.compose(P.set(x,height(x,z)+.5,z), q.identity(), S.set(1,1,1)); pm.setMatrixAt(i,M); });
+  pm.instanceMatrix.needsUpdate=true;
+  const railMat = new THREE.MeshLambertMaterial({color:'#8a7052'});
+  for(const [x,z,w,d] of [[0,-HALF,HALF*2,.08],[0,HALF,HALF*2,.08],[-HALF,0,.08,HALF*2],[HALF,0,.08,HALF*2]]){
+    const r = new THREE.Mesh(new THREE.BoxGeometry(w,.08,d), railMat); r.position.set(x,.75,z); scene.add(r); }
+})();
+
+// лавки та ліхтарі вздовж стежок
+(function(){
+  const benchMat = new THREE.MeshLambertMaterial({color:'#8c5a35'}), ironMat = new THREE.MeshLambertMaterial({color:'#333'});
+  let n=0;
+  for(const p of PATHS) for(let i=0;i<p.length-1;i++){
+    const [ax,az]=p[i], [bx,bz]=p[i+1], ang=Math.atan2(bz-az,bx-ax);
+    const mx=(ax+bx)/2+Math.sin(ang)*2.6, mz=(az+bz)/2-Math.cos(ang)*2.6;
+    if(Math.hypot(mx-BASE.x,mz-BASE.z)<16 || n>14) continue; n++;
+    const g = new THREE.Group();
+    const seat = new THREE.Mesh(new THREE.BoxGeometry(1.8,.08,.5), benchMat); seat.position.y=.45;
+    const back = new THREE.Mesh(new THREE.BoxGeometry(1.8,.4,.06), benchMat); back.position.set(0,.75,-.24);
+    const l1 = new THREE.Mesh(new THREE.BoxGeometry(.08,.45,.5), ironMat); l1.position.set(-.8,.22,0);
+    const l2 = l1.clone(); l2.position.x=.8;
+    g.add(seat,back,l1,l2); g.traverse(o=>{o.castShadow=true;});
+    g.position.set(mx,height(mx,mz),mz); g.rotation.y = -ang; scene.add(g);
+    addObs({x:mx,z:mz,r:.9,kind:'bench'});
+    const lx=(ax+bx)/2-Math.sin(ang)*2.4, lz=(az+bz)/2+Math.cos(ang)*2.4;
+    const lamp = new THREE.Mesh(new THREE.CylinderGeometry(.06,.08,3.4,6), ironMat); lamp.position.set(lx,height(lx,lz)+1.7,lz); lamp.castShadow=true; scene.add(lamp);
+    const bulb = new THREE.Mesh(new THREE.SphereGeometry(.18,8,6), new THREE.MeshBasicMaterial({color:'#fff4c8'})); bulb.position.set(lx,height(lx,lz)+3.45,lz); scene.add(bulb);
+    addObs({x:lx,z:lz,r:.2,kind:'lamp'});
+  }
+})();
+
+// штаб: флагшток і крейдяне коло
+const flag = (function(){
+  const g = new THREE.Group();
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(.06,.06,5,8), new THREE.MeshLambertMaterial({color:'#ddd'})); pole.position.y=2.5;
+  const cloth = new THREE.Mesh(new THREE.PlaneGeometry(1.4,.9,8,1), new THREE.MeshLambertMaterial({color:'#d9472b', side:THREE.DoubleSide})); cloth.position.set(.72,4.4,0);
+  const ring = new THREE.Mesh(new THREE.RingGeometry(5.6,6,48), new THREE.MeshBasicMaterial({color:'#f4f4f0'})); ring.rotation.x=-Math.PI/2; ring.position.y=.04;
+  g.add(pole,cloth,ring); g.position.set(BASE.x,height(BASE.x,BASE.z),BASE.z); pole.castShadow=true; scene.add(g);
+  addObs({x:BASE.x,z:BASE.z,r:.2,kind:'pole'});
+  return {g,cloth};
+})();
+
+// ---------------------------------------------------------------- characters
+function makeKid(shirt, pants, cap, band){
+  const g = new THREE.Group(), body = new THREE.Group();
+  const m = c => new THREE.MeshLambertMaterial({color:c});
+  const torso = new THREE.Mesh(new THREE.BoxGeometry(.5,.62,.3), m(shirt)); torso.position.y=1.05;
+  const head = new THREE.Mesh(new THREE.SphereGeometry(.2,12,10), m('#f1c9a5')); head.position.y=1.55;
+  const hat = new THREE.Mesh(new THREE.CylinderGeometry(.21,.22,.12,12), m(cap)); hat.position.y=1.7;
+  const visor = new THREE.Mesh(new THREE.BoxGeometry(.24,.03,.16), m(cap)); visor.position.set(0,1.66,.2);
+  const legL = new THREE.Mesh(new THREE.BoxGeometry(.18,.7,.2), m(pants)); legL.geometry.translate(0,-.35,0); legL.position.set(-.12,.74,0);
+  const legR = legL.clone(); legR.position.x=.12;
+  const armL = new THREE.Mesh(new THREE.BoxGeometry(.13,.55,.15), m(shirt)); armL.geometry.translate(0,-.27,0); armL.position.set(-.33,1.32,0);
+  const armR = armL.clone(); armR.position.x=.33;
+  body.add(torso,head,hat,visor,legL,legR,armL,armR);
+  if(band){ const b = new THREE.Mesh(new THREE.BoxGeometry(.15,.1,.17), m(band)); b.position.set(.33,1.18,0); body.add(b); }
+  body.traverse(o=>{ if(o.isMesh){ o.castShadow=true; } });
+  g.add(body); scene.add(g);
+  return { g, body, legL, legR, armL, armR, phase:0 };
+}
+function animKid(k, speed, dt, crouch){
+  k.phase += dt*speed*2.2;
+  const s = Math.sin(k.phase)*Math.min(1,speed/3)*.7;
+  k.legL.rotation.x = s; k.legR.rotation.x = -s; k.armL.rotation.x = -s; k.armR.rotation.x = s;
+  k.body.scale.y = lerp(k.body.scale.y, crouch?.68:1, Math.min(1,dt*10));
+}
+// мітка над козаком (? / !)
+function makeMark(){
+  const c = document.createElement('canvas'); c.width=c.height=64; const x=c.getContext('2d');
+  const tex = new THREE.CanvasTexture(c); const sp = new THREE.Sprite(new THREE.SpriteMaterial({map:tex, depthTest:false}));
+  sp.scale.set(.6,.6,1); sp.renderOrder = 10; scene.add(sp);
+  return { sp, set(ch, col){ if(this.ch===ch+col) return; this.ch=ch+col; x.clearRect(0,0,64,64); if(ch){ x.fillStyle=col; x.beginPath(); x.arc(32,32,28,0,7); x.fill(); x.fillStyle='#fff'; x.font='bold 40px system-ui'; x.textAlign='center'; x.textBaseline='middle'; x.fillText(ch,32,35);} tex.needsUpdate=true; sp.visible=!!ch; } };
+}
+
+// ---------------------------------------------------------------- sticks
+const stickMat = new THREE.MeshLambertMaterial({color:'#7a5534'});
+const stickGlow = new THREE.MeshLambertMaterial({color:'#b98a4e', emissive:'#5a3a10'});
+const stickGeo = new THREE.CylinderGeometry(.045,.055,1,5); stickGeo.rotateZ(Math.PI/2);
+let sticks = [];
+function spawnSticks(){
+  sticks.forEach(s=>scene.remove(s.mesh)); sticks = [];
+  const want = 190;
+  for(let i=0;i<20000 && sticks.length<want;i++){
+    const x=R(-HALF+4,HALF-4), z=R(-HALF+4,HALF-4);
+    if(Math.hypot(x-POND.x,z-POND.z)<POND.r+1) continue;
+    // більше палок під деревами
+    const t = near(x,z,5).filter(o=>o.kind==='tree').length;
+    if(rand() > .15 + t*.18) continue;
+    if(Math.hypot(x-BASE.x,z-BASE.z)<8) continue;
+    const len = R(.8,1.3);
+    const mesh = new THREE.Mesh(stickGeo, stickMat); mesh.scale.set(len,1,1);
+    mesh.position.set(x, height(x,z)+.05, z); mesh.rotation.y = R(0,6.28); mesh.rotation.z = R(-.08,.08); mesh.castShadow = true;
+    scene.add(mesh); sticks.push({x,z,mesh,taken:false});
+  }
+  // кілька палок біля штабу для старту
+  for(let i=0;i<4;i++){ const a=i*1.6+.5, x=BASE.x+Math.cos(a)*10, z=BASE.z-6+Math.sin(a)*5;
+    const mesh = new THREE.Mesh(stickGeo, stickMat); mesh.position.set(x,height(x,z)+.05,z); mesh.rotation.y=a; scene.add(mesh); sticks.push({x,z,mesh,taken:false}); }
+}
+
+// стрілки на землі
+let arrows = [];
+function arrowMesh(x,z,yaw,ghost){
+  const g = new THREE.Group(), mat = ghost ? new THREE.MeshBasicMaterial({color:'#ffe9a0', transparent:true, opacity:.45}) : stickMat;
+  const shaft = new THREE.Mesh(stickGeo, mat); shaft.scale.x = 1.5;
+  const h1 = new THREE.Mesh(stickGeo, mat); h1.scale.x=.7; h1.position.set(.48,0,.2); h1.rotation.y = .75;
+  const h2 = new THREE.Mesh(stickGeo, mat); h2.scale.x=.7; h2.position.set(.48,0,-.2); h2.rotation.y = -.75;
+  g.add(shaft,h1,h2); g.traverse(o=>{ if(o.isMesh) o.castShadow = !ghost; });
+  g.position.set(x,height(x,z)+.06,z); g.rotation.y = yaw; scene.add(g); return g;
+}
+// yaw тут — напрям у площині XZ: (cos, -sin) для three.js rotation.y
+const dirFromYaw = yaw => ({x:Math.cos(yaw), z:-Math.sin(yaw)});
+const yawFromDir = (dx,dz) => Math.atan2(-dz,dx);
+
+// ---------------------------------------------------------------- audio
+let actx=null;
+function audio(){ if(!actx){ try{ actx=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){} } else if(actx.state==='suspended') actx.resume(); }
+function tone(f0,f1,d,type='sine',v=.08,delay=0){ if(!actx) return; const t=actx.currentTime+delay,o=actx.createOscillator(),g=actx.createGain();
+  o.type=type; o.frequency.setValueAtTime(f0,t); o.frequency.exponentialRampToValueAtTime(f1,t+d); g.gain.setValueAtTime(v,t); g.gain.exponentialRampToValueAtTime(.0001,t+d);
+  o.connect(g); g.connect(actx.destination); o.start(t); o.stop(t+d+.05); }
+const SFX = {
+  pick(){ tone(500,700,.08,'triangle',.06); }, place(){ tone(220,180,.1,'square',.05); tone(330,260,.1,'square',.04,.08); },
+  whistle(){ tone(1800,2200,.25,'sine',.08); tone(2200,1700,.35,'sine',.08,.28); },
+  alert(){ tone(600,900,.12,'square',.07); }, spotted(){ tone(400,800,.2,'sawtooth',.08); tone(800,1200,.2,'sawtooth',.08,.18); },
+  bird(){ const f=R(2400,3600); tone(f,f*1.3,.07,'sine',.025); tone(f*1.1,f*.9,.08,'sine',.02,.1); },
+  win(){ [523,659,784,1047].forEach((f,i)=>tone(f,f,.25,'triangle',.08,i*.14)); }, lose(){ [400,300,220].forEach((f,i)=>tone(f,f*.95,.3,'sawtooth',.06,i*.2)); },
+  deny(){ tone(200,150,.15,'square',.05); },
+};
+
+// ---------------------------------------------------------------- input
+const keys = {}, pressedQ = {};
+addEventListener('keydown', e => { if(['Space','Tab'].includes(e.code)) e.preventDefault(); if(!e.repeat) pressedQ[e.code]=true; keys[e.code]=true; audio(); });
+addEventListener('keyup', e => keys[e.code]=false);
+addEventListener('blur', () => { for(const k in keys) keys[k]=false; });
+const take = c => { const v = pressedQ[c]; pressedQ[c]=false; return v; };
+let camYaw = Math.PI/2, camPitch = .32, locked = false;
+canvas.addEventListener('click', () => { audio(); if(state.mode==='play' && !coarse && canvas.requestPointerLock) { try { const r = canvas.requestPointerLock(); if(r && r.catch) r.catch(()=>{}); } catch(e){} } });
+document.addEventListener('pointerlockchange', () => { locked = document.pointerLockElement === canvas; });
+addEventListener('mousemove', e => { if(locked){ camYaw -= e.movementX*.0028; camPitch = clamp(camPitch + e.movementY*.0022, -.25, 1.1); } });
+// перетягування мишею без pointer lock (напр. у вікні перегляду)
+let drag=null;
+canvas.addEventListener('mousedown', e => { if(!locked) drag={x:e.clientX,y:e.clientY}; });
+addEventListener('mouseup', () => drag=null);
+addEventListener('mousemove', e => { if(drag && !locked){ camYaw -= (e.clientX-drag.x)*.005; camPitch=clamp(camPitch+(e.clientY-drag.y)*.004,-.25,1.1); drag={x:e.clientX,y:e.clientY}; } });
+
+// touch
+const coarse = matchMedia('(pointer: coarse)').matches;
+const joy = {x:0, y:0, id:null, lookId:null, lx:0, ly:0};
+if(coarse){
+  document.getElementById('touch').classList.add('on');
+  const st = document.getElementById('stick'), kn = document.getElementById('knob');
+  st.addEventListener('touchstart', e => { e.preventDefault(); joy.id = e.changedTouches[0].identifier; audio(); }, {passive:false});
+  addEventListener('touchmove', e => { for(const t of e.changedTouches){
+    if(t.identifier===joy.id){ const r=st.getBoundingClientRect(); let dx=(t.clientX-r.left-65)/50, dy=(t.clientY-r.top-65)/50; const l=Math.hypot(dx,dy); if(l>1){dx/=l;dy/=l;} joy.x=dx; joy.y=dy; kn.style.left=(45+dx*45)+'px'; kn.style.top=(45+dy*45)+'px'; }
+    else if(t.identifier===joy.lookId){ camYaw -= (t.clientX-joy.lx)*.006; camPitch=clamp(camPitch+(t.clientY-joy.ly)*.004,-.25,1.1); joy.lx=t.clientX; joy.ly=t.clientY; } } }, {passive:false});
+  canvas.addEventListener('touchstart', e => { const t=e.changedTouches[0]; joy.lookId=t.identifier; joy.lx=t.clientX; joy.ly=t.clientY; audio(); }, {passive:true});
+  addEventListener('touchend', e => { for(const t of e.changedTouches){ if(t.identifier===joy.id){ joy.id=null; joy.x=joy.y=0; kn.style.left='45px'; kn.style.top='45px'; } if(t.identifier===joy.lookId) joy.lookId=null; } });
+  document.querySelectorAll('.tbtn').forEach(b => {
+    const k=b.dataset.k;
+    b.addEventListener('touchstart', e=>{ e.preventDefault(); audio(); if(k==='KeyC'){ keys.KeyC = !keys.KeyC; b.style.background = keys.KeyC?'rgba(255,207,74,.4)':''; } else { pressedQ[k]=true; keys[k]=true; } }, {passive:false});
+    b.addEventListener('touchend', e=>{ e.preventDefault(); if(k!=='KeyC') keys[k]=false; }, {passive:false});
+  });
+}
+
+// ---------------------------------------------------------------- game state
+const ui = id => document.getElementById(id);
+const player = { x:0, z:0, yaw:0, vx:0, vz:0, sticks:0, stamina:1, crouch:false, inBush:false, moving:0, sprint:false, kid:makeKid('#2f6fb3','#2b2b3a','#f2c230') };
+let cossacks = [];
+const ghost = arrowMesh(0,0,0,true); ghost.visible=false;
+const state = { mode:'menu', phase:'prep', t:PREP_TIME, msg:'', msgT:0, result:null, stats:{}, birdT:3, anchor:{x:BASE.x,z:BASE.z}, leashWarned:false };
+
+function say(text, t=2.5){ state.msg=text; state.msgT=t; }
+
+function resetGame(){
+  seed = 777 + Math.floor(Math.random()*100000);
+  arrows.forEach(a=>scene.remove(a.mesh)); arrows = [];
+  spawnSticks();
+  player.x = BASE.x+R(-2,2); player.z = BASE.z-8; player.yaw = Math.PI/2; player.sticks = 0; player.stamina = 1; player.crouch=false;
+  camYaw = Math.PI/2; camPitch = .32;
+  cossacks.forEach(c=>{ scene.remove(c.kid.g); scene.remove(c.mark.sp); }); cossacks = [];
+  const D = DIFF[diffKey];
+  const names = ['Андрій','Оксана','Тарас','Марічка'];
+  for(let i=0;i<D.n;i++){
+    const a = i/D.n*Math.PI*2;
+    const c = { name:names[i], x:BASE.x+Math.cos(a)*2.2, z:BASE.z+Math.sin(a)*2.2, yaw:a+Math.PI, look:0, state:'count', target:null, next:0, detect:0,
+      lastSeen:null, lostT:0, searchC:null, searchR:12, waitT:0, speed:0, off:(i-(D.n-1)/2)*2.2,
+      kid: makeKid('#c8372a','#2b3d22','#c8372a','#ffd23a'), mark: makeMark() };
+    cossacks.push(c);
+  }
+  state.phase='prep'; state.t=PREP_TIME; state.anchor={x:BASE.x,z:BASE.z}; state.result=null;
+  state.stats = { picked:0, placed:0, trackedArrows:0, honest:0, start:performance.now() };
+  say('Козаки рахують до ста!\nЗбирай палки (3 = стрілка) і тікай, викладаючи стрілки.', 5);
+}
+
+// ---------------------------------------------------------------- collision
+function collide(o, r){
+  for(const ob of near(o.x,o.z,r+2)){
+    const dx=o.x-ob.x, dz=o.z-ob.z, d=Math.hypot(dx,dz), m=ob.r+r;
+    if(d<m && d>1e-4){ o.x = ob.x + dx/d*m; o.z = ob.z + dz/d*m; }
+  }
+  const dp = Math.hypot(o.x-POND.x,o.z-POND.z), pm = POND.r-1+r;
+  if(dp<pm){ o.x = POND.x+(o.x-POND.x)/dp*pm; o.z = POND.z+(o.z-POND.z)/dp*pm; }
+  o.x = clamp(o.x,-HALF+1,HALF-1); o.z = clamp(o.z,-HALF+1,HALF-1);
+}
+function inBush(x,z,shrink=0){ for(const b of bushes) if(Math.hypot(b.x-x,b.z-z) < b.r-shrink) return b; return null; }
+function lineOfSight(ax,az,bx,bz){
+  const d = Math.hypot(bx-ax,bz-az), n = Math.ceil(d/1.2);
+  for(let i=1;i<n;i++){ const t=i/n, x=lerp(ax,bx,t), z=lerp(az,bz,t);
+    for(const ob of near(x,z,1.2)) if(ob.kind==='tree' && Math.hypot(ob.x-x,ob.z-z) < ob.r+.35) return false; }
+  return true;
+}
+
+// ---------------------------------------------------------------- player update
+function updatePlayer(dt){
+  const p = player;
+  let fx = (keys.KeyD||keys.ArrowRight?1:0) - (keys.KeyA||keys.ArrowLeft?1:0) + joy.x;
+  let fz = (keys.KeyW||keys.ArrowUp?1:0) - (keys.KeyS||keys.ArrowDown?1:0) - joy.y;
+  const len = Math.hypot(fx,fz); if(len>1){ fx/=len; fz/=len; }
+  p.crouch = !!(keys.KeyC || keys.ControlLeft);
+  const wantSprint = (keys.ShiftLeft||keys.ShiftRight) && len>.1 && !p.crouch;
+  p.sprint = wantSprint && p.stamina>0.02;
+  p.stamina = clamp(p.stamina + (p.sprint ? -dt/7 : dt/9), 0, 1);
+  const speed = p.crouch ? 2.0 : p.sprint ? 7.2 : 4.6;
+  // напрям відносно камери
+  const f = dirFromYaw(camYaw), rx = -f.z, rz = f.x;   // вперед і праворуч від камери
+  const mx = f.x*fz + rx*fx, mz = f.z*fz + rz*fx;
+  const ml = Math.hypot(mx,mz);
+  const tvx = ml>.01 ? mx/ml*speed*Math.min(1,len) : 0, tvz = ml>.01 ? mz/ml*speed*Math.min(1,len) : 0;
+  p.vx = lerp(p.vx, tvx, Math.min(1,dt*10)); p.vz = lerp(p.vz, tvz, Math.min(1,dt*10));
+  const ox=p.x, oz=p.z;
+  p.x += p.vx*dt; p.z += p.vz*dt;
+  collide(p,.35);
+  // правило: не відходити далі ніж LEASH_MAX від останньої стрілки (під час підготовки)
+  if(state.phase==='prep'){
+    const dx=p.x-state.anchor.x, dz=p.z-state.anchor.z, d=Math.hypot(dx,dz);
+    if(d>LEASH_MAX){ p.x = state.anchor.x+dx/d*LEASH_MAX; p.z = state.anchor.z+dz/d*LEASH_MAX;
+      if(!state.leashWarned){ say('Стоп! За правилами стрілка має бути кожні '+LEASH_MAX+' м.\nПостав стрілку (F), щоб бігти далі.', 3); SFX.deny(); state.leashWarned=true; } }
+    else if(d<LEASH_MAX-5) state.leashWarned=false;
+  }
+  p.moving = Math.hypot(p.x-ox,p.z-oz)/Math.max(dt,1e-4);
+  if(p.moving>.3) p.yaw = yawFromDir(p.vx,p.vz);
+  p.inBush = !!inBush(p.x,p.z,.3);
+
+  // підбирання палок
+  for(const s of sticks) if(!s.taken){
+    const d = Math.hypot(s.x-p.x, s.z-p.z);
+    s.mesh.material = d<7 ? stickGlow : stickMat;
+    if(d<1.3){ s.taken=true; scene.remove(s.mesh); p.sticks++; state.stats.picked++; SFX.pick(); if(p.sticks===3) say('Палок вистачає на стрілку — натисни F',2); }
+  }
+  // викладання стрілки
+  const canPlace = state.phase==='prep' && p.sticks>=3;
+  const ay = camYaw, ad = dirFromYaw(ay), gx = p.x+ad.x*1.6, gz = p.z+ad.z*1.6;
+  ghost.visible = canPlace; if(canPlace){ ghost.position.set(gx,height(gx,gz)+.07,gz); ghost.rotation.y = ay; }
+  if(take('KeyF') || take('KeyE')){
+    if(state.phase!=='prep'){ say('Козаки вже вийшли — стрілки більше не ставлять!',2); SFX.deny(); }
+    else if(p.sticks<3){ say('Треба 3 палки. Шукай під деревами — вони підсвічуються, коли ти поруч.',2.5); SFX.deny(); }
+    else if(Math.hypot(gx-POND.x,gz-POND.z)<POND.r){ say('Не у воду ж!',1.5); SFX.deny(); }
+    else {
+      p.sticks -= 3; SFX.place();
+      arrows.push({ x:gx, z:gz, yaw:ay, mesh:arrowMesh(gx,gz,ay,false) });
+      state.anchor = {x:gx, z:gz}; state.stats.placed++;
+      say('Стрілка №'+arrows.length,1.2);
+    }
+  }
+  if(take('Enter') && state.phase==='prep'){ if(arrows.length<3){ say('Спершу постав хоча б 3 стрілки.',2); SFX.deny(); } else startSearch(); }
+
+  // анімація
+  const k = p.kid; k.g.position.set(p.x, height(p.x,p.z), p.z);
+  k.g.rotation.y = lerp(k.g.rotation.y, k.g.rotation.y + angDiff(k.g.rotation.y, p.yaw + Math.PI/2), Math.min(1,dt*12));
+  animKid(k, p.moving, dt, p.crouch);
+}
+
+// ---------------------------------------------------------------- cossacks AI
+function startSearch(){
+  state.phase='search'; state.t=SEARCH_TIME; SFX.whistle();
+  say('«Хто не сховався — ми не винні!»\nКозаки вийшли зі штабу. Ховайся!', 4);
+  // оцінка «чесності» стрілок
+  let honest=0; for(let i=0;i<arrows.length-1;i++){ const a=arrows[i], b=arrows[i+1]; if(Math.abs(angDiff(a.yaw, yawFromDir(b.x-a.x,b.z-a.z)))<.6) honest++; }
+  state.stats.honest = arrows.length>1 ? honest/(arrows.length-1) : 0;
+  for(const c of cossacks){ c.state='track'; c.next=0; c.target={x:BASE.x, z:BASE.z-6}; c.searchT=0; c.lookAt=null; c.mode='follow';
+    if(!arrows.length){ c.state='hunt'; c.lastSeen={x:player.x,z:player.z}; } }
+  ghost.visible=false;
+}
+function visibility(c){
+  const p = player, D = DIFF[diffKey];
+  const dx=p.x-c.x, dz=p.z-c.z, d=Math.hypot(dx,dz);
+  if(d<1.6) return 3;
+  let range = D.view;
+  if(p.crouch) range *= .55;
+  if(p.inBush) range = p.crouch ? 3.2 : 9;
+  if(p.sprint) range *= 1.25;
+  if(d>range) return 0;
+  const ang = Math.abs(angDiff(c.yaw + c.look, yawFromDir(dx,dz)));
+  if(ang > 1.05 && d>4) return 0;                     // поза полем зору
+  if(!lineOfSight(c.x,c.z,p.x,p.z)) return 0;
+  return (1 - d/range)*2.2 + .35;
+}
+function stepToward(c, tx, tz, speed, dt){
+  let dx=tx-c.x, dz=tz-c.z; const d=Math.hypot(dx,dz);
+  if(d<.4){ c.speed=0; return true; }
+  dx/=d; dz/=d;
+  // обхід дерев
+  for(const ob of near(c.x,c.z,3)){ const ox=ob.x-c.x, oz=ob.z-c.z, od=Math.hypot(ox,oz);
+    if(od<2.4 && od>.01 && ox*dx+oz*dz>0){ let px=-dz, pz=dx; if(px*ox+pz*oz>0){ px=-px; pz=-pz; } const k=(2.4-od)*.9; dx+=px*k; dz+=pz*k; } }
+  const pd=Math.hypot(c.x-POND.x,c.z-POND.z); if(pd<POND.r+3){ dx += (c.x-POND.x)/pd*.8; dz += (c.z-POND.z)/pd*.8; }
+  const l=Math.hypot(dx,dz); dx/=l; dz/=l;
+  const bx=c.x, bz=c.z;
+  c.x += dx*speed*dt; c.z += dz*speed*dt; collide(c,.35);
+  if(Math.hypot(c.x-bx,c.z-bz) < speed*dt*.3) c.stuckT=(c.stuckT||0)+dt; else c.stuckT=0;
+  if(c.stuckT>1.5){ c.stuckT=0; c.speed=0; return true; }
+  c.yaw = c.yaw + angDiff(c.yaw, yawFromDir(dx,dz))*Math.min(1,dt*6);
+  c.speed = speed; return false;
+}
+function alertOthers(src){ for(const c of cossacks) if(c!==src && c.state!=='chase' && Math.hypot(c.x-src.x,c.z-src.z)<45){ c.state='hunt'; c.lastSeen={x:player.x,z:player.z}; } }
+
+function updateCossacks(dt){
+  const p = player, D = DIFF[diffKey];
+  for(const c of cossacks){
+    c.look = Math.sin(performance.now()/900 + c.off)*.5;
+    if(state.phase==='prep'){ c.speed=0; c.yaw += dt*.3; }
+    else {
+      // помічаємо гравця
+      const v = visibility(c);
+      if(v>0){ c.detect = Math.min(1.2, c.detect + v*dt*(c.state==='chase'?3:1)); c.lastSeen={x:p.x,z:p.z}; c.lostT=0; }
+      else c.detect = Math.max(0, c.detect - dt*.25);
+      // чують біг
+      const pd = Math.hypot(p.x-c.x,p.z-c.z);
+      if(p.sprint && pd<14 && c.state!=='chase'){ c.detect = Math.min(1, c.detect+dt*.5); c.lookAt={x:p.x,z:p.z}; }
+      if(p.inBush && p.moving>1 && pd<7 && c.state!=='chase'){ c.detect = Math.min(1, c.detect+dt*.4); c.lookAt={x:p.x,z:p.z}; } // шурхіт у кущах
+      if(c.detect>=1 && c.state!=='chase'){ c.state='chase'; SFX.spotted(); say(c.name+': «Бачу розбійника!»',2); alertOthers(c); }
+
+      if(c.state==='track'){
+        // шукаємо наступну стрілку в полі зору
+        for(let j=arrows.length-1;j>=c.next;j--){ const a=arrows[j]; const d=Math.hypot(a.x-c.x,a.z-c.z);
+          if(d<14 && (d<5 || lineOfSight(c.x,c.z,a.x,a.z))){ c.next=j; c.target={x:a.x,z:a.z}; c.mode='toArrow'; break; } }
+        if(c.target && stepToward(c, c.target.x + (c.mode==='toArrow'?c.off*.3:0), c.target.z, 3.3, dt)){
+          if(c.mode==='toArrow'){ // дійшли до стрілки: йдемо в її напрямку
+            const a = arrows[c.next]; state.stats.trackedArrows = Math.max(state.stats.trackedArrows, c.next+1);
+            c.next++; c.mode='follow';
+            if(c.next>=arrows.length){ c.state='search'; c.searchC={x:a.x+dirFromYaw(a.yaw).x*12, z:a.z+dirFromYaw(a.yaw).z*12}; c.searchR=10; c.target=null; }
+            else { const d=dirFromYaw(a.yaw); c.target={x:a.x+d.x*24, z:a.z+d.z*24}; c.searchT=0; }
+          } else { // стрілки не видно — кружляємо
+            c.searchT += 1; const ang = R(0,6.28), rr = 6 + c.searchT*3;
+            if(c.searchT>5 && c.next<arrows.length){ const a=arrows[c.next]; c.target={x:a.x,z:a.z}; c.mode='toArrow'; }
+            else c.target={x:clamp(c.target.x+Math.cos(ang)*rr,-HALF+3,HALF-3), z:clamp(c.target.z+Math.sin(ang)*rr,-HALF+3,HALF-3)};
+          }
+        }
+      } else if(c.state==='search' || c.state==='hunt'){
+        if(c.state==='hunt' && c.lastSeen){ c.searchC = {...c.lastSeen}; c.searchR=6; c.state='search'; c.target=null; }
+        if(!c.target){ const a=R(0,6.28), r=R(2,c.searchR); c.target={x:clamp(c.searchC.x+Math.cos(a)*r,-HALF+3,HALF-3), z:clamp(c.searchC.z+Math.sin(a)*r,-HALF+3,HALF-3)}; c.waitT=R(.8,2); }
+        if(c.lookAt){ const go = stepToward(c, c.lookAt.x, c.lookAt.z, 3, dt); if(go || Math.random()<dt*.3) c.lookAt=null; }
+        else if(stepToward(c, c.target.x, c.target.z, 3.0, dt)){ c.waitT-=dt; c.look = Math.sin(performance.now()/400+c.off)*1.1; if(c.waitT<=0){ c.target=null; c.searchR = Math.min(60, c.searchR+3); } }
+      } else if(c.state==='chase'){
+        if(visibility(c)>0){ c.lastSeen={x:p.x,z:p.z}; c.lostT=0; } else c.lostT+=dt;
+        stepToward(c, c.lastSeen.x, c.lastSeen.z, D.chase, dt);
+        if(c.lostT>3.5 && Math.hypot(c.x-c.lastSeen.x,c.z-c.lastSeen.z)<1.5){ c.state='search'; c.searchC={...c.lastSeen}; c.searchR=8; c.target=null; c.detect=.5; say(c.name+': «Де він подівся?!»',2); }
+        if(Math.hypot(p.x-c.x,p.z-c.z)<1.1){ endGame(false, c.name+' тебе спіймав(ла)!'); return; }
+      }
+    }
+    c.kid.g.position.set(c.x, height(c.x,c.z), c.z);
+    c.kid.g.rotation.y = c.yaw + Math.PI/2;
+    animKid(c.kid, c.speed, dt, false);
+    c.mark.sp.position.set(c.x, height(c.x,c.z)+2.3, c.z);
+    if(state.phase==='prep') c.mark.set('', '');
+    else if(c.state==='chase') c.mark.set('!', '#d9472b');
+    else if(c.detect>.25) c.mark.set('?', '#e8a21a');
+    else c.mark.set('', '');
+  }
+}
+
+function endGame(win, why){
+  state.mode='end'; state.result={win, why};
+  if(document.exitPointerLock) document.exitPointerLock();
+  win ? SFX.win() : SFX.lose();
+  const st = state.stats;
+  showCard(`
+    <h1>${win ? 'Перемога!' : 'Спіймали!'}</h1>
+    <h2>${why}</h2>
+    <div class="keys">
+      <span>Палок знайдено</span><b>${st.picked}</b>
+      <span>Стрілок викладено</span><b>${st.placed}</b>
+      <span>Козаки пройшли стрілок</span><b>${st.trackedArrows} з ${arrows.length}</b>
+      <span>Чесні стрілки</span><b>${Math.round(st.honest*100)}%</b>
+    </div>
+    <p style="font-size:13px;opacity:.75">Чесна стрілка вказує на наступну. Хитрі стрілки збивають козаків зі сліду, але це не по правилах!</p>
+    <div class="row"><button id="again" class="sel">Ще раз</button><button id="menu">Меню</button></div>`);
+  ui('again').onclick = () => startGame();
+  ui('menu').onclick = () => showMenu();
+}
+
+// ---------------------------------------------------------------- camera & loop
+function updateCamera(dt){
+  const p = player, h = height(p.x,p.z);
+  const f = dirFromYaw(camYaw);
+  // камера підсувається ближче, якщо позаду крона дерева
+  let dist = 5.2;
+  for(let d=.9; d<=5.2; d+=.35){
+    const tx = p.x - f.x*d*Math.cos(camPitch), tz = p.z - f.z*d*Math.cos(camPitch);
+    if(near(tx,tz,2).some(o=>o.kind==='tree' && Math.hypot(o.x-tx,o.z-tz) < 1.25)){ dist = Math.max(1.3, d-.5); break; }
+  }
+  state.camDist = lerp(state.camDist||5.2, dist, Math.min(1, dt*(dist<(state.camDist||5.2)?12:3)));
+  dist = state.camDist;
+  let cx = p.x - f.x*dist*Math.cos(camPitch), cz = p.z - f.z*dist*Math.cos(camPitch), cy = h + 1.6 + dist*Math.sin(camPitch);
+  cy = Math.max(cy, height(cx,cz)+.5);
+  camera.position.set(cx,cy,cz);
+  camera.lookAt(p.x, h+1.5, p.z);
+  sun.position.set(p.x+40, 70, p.z+25); sun.target.position.set(p.x,0,p.z);
+}
+
+const mini = ui('mini'), mctx = mini.getContext('2d');
+const mapBg = document.createElement('canvas'); mapBg.width = mapBg.height = HALF*2;
+(function(){
+  const g = mapBg.getContext('2d');
+  g.fillStyle='#3e6b35'; g.fillRect(0,0,HALF*2,HALF*2);
+  g.strokeStyle='#b59a6a'; g.lineWidth=3; for(const p of PATHS){ g.beginPath(); p.forEach(([x,z],i)=> i?g.lineTo(x+HALF,z+HALF):g.moveTo(x+HALF,z+HALF)); g.stroke(); }
+  g.fillStyle='#4d86a8'; g.beginPath(); g.arc(POND.x+HALF,POND.z+HALF,POND.r,0,7); g.fill();
+  g.fillStyle='#24461f'; for(const t of trees){ g.beginPath(); g.arc(t.x+HALF,t.z+HALF,1.4,0,7); g.fill(); }
+  g.fillStyle='#5d9a4a'; for(const b of bushes){ g.beginPath(); g.arc(b.x+HALF,b.z+HALF,b.r,0,7); g.fill(); }
+  g.fillStyle='#d9472b'; g.beginPath(); g.arc(BASE.x+HALF,BASE.z+HALF,4,0,7); g.fill();
+})();
+function drawMini(){
+  const p = player, S = 1.5, W = 180;          // 1 м = 1.5 px, видно ±60 м
+  mctx.save(); mctx.clearRect(0,0,W,W);
+  mctx.beginPath(); mctx.arc(W/2,W/2,W/2-2,0,7); mctx.clip();
+  mctx.translate(W/2,W/2); mctx.rotate(camYaw - Math.PI/2); mctx.scale(S,S); mctx.translate(-p.x,-p.z);
+  mctx.drawImage(mapBg, -HALF, -HALF);
+  mctx.fillStyle='#ffcf4a';
+  arrows.forEach((a,i)=>{ mctx.save(); mctx.translate(a.x,a.z); mctx.rotate(-a.yaw); mctx.beginPath(); mctx.moveTo(3,0); mctx.lineTo(-2,-2); mctx.lineTo(-2,2); mctx.fill(); mctx.restore(); });
+  if(arrows.length){ mctx.strokeStyle='rgba(255,207,74,.5)'; mctx.lineWidth=.6; mctx.beginPath(); mctx.moveTo(BASE.x,BASE.z); arrows.forEach(a=>mctx.lineTo(a.x,a.z)); mctx.stroke(); }
+  if(state.phase==='prep'){ mctx.strokeStyle='rgba(255,255,255,.35)'; mctx.lineWidth=.6; mctx.beginPath(); mctx.arc(state.anchor.x,state.anchor.z,LEASH_MAX,0,7); mctx.stroke(); }
+  for(const c of cossacks){ const d=Math.hypot(c.x-p.x,c.z-p.z); if(state.phase==='search' && (d<28 || c.state==='chase')){ mctx.fillStyle='#ff3b2f'; mctx.beginPath(); mctx.arc(c.x,c.z,2.2,0,7); mctx.fill(); } }
+  mctx.restore();
+  // гравець (завжди дивиться вгору)
+  mctx.fillStyle='#fff'; mctx.beginPath(); mctx.moveTo(W/2,W/2-7); mctx.lineTo(W/2-5,W/2+5); mctx.lineTo(W/2+5,W/2+5); mctx.fill();
+  mctx.fillStyle='rgba(255,255,255,.8)'; mctx.font='bold 11px system-ui'; mctx.textAlign='center'; const th=camYaw-Math.PI/2; mctx.fillText('Пн', W/2+Math.sin(th)*76, W/2-Math.cos(th)*76+4);
+}
+
+function updateHUD(){
+  const p = player;
+  ui('phase').textContent = state.phase==='prep' ? 'Підготовка: розбійники тікають' : 'Козаки шукають';
+  ui('timer').textContent = fmt(state.t);
+  ui('timer').style.color = state.phase==='search' ? '#ffb4a6' : '#fff';
+  ui('sticks').textContent = p.sticks; ui('arrows').textContent = arrows.length;
+  const d = Math.hypot(p.x-state.anchor.x, p.z-state.anchor.z);
+  ui('leash').textContent = state.phase==='prep' ? Math.round(d)+' / '+LEASH_MAX+' м' : '—';
+  ui('leashBar').style.width = (state.phase==='prep' ? clamp(d/LEASH_MAX,0,1)*100 : 0)+'%';
+  ui('leashBar').style.background = d>LEASH_WARN ? '#ff6a4d' : '#ffcf4a';
+  ui('stamBar').style.width = p.stamina*100+'%';
+  const eye = ui('eye');
+  if(state.phase==='search'){
+    const maxD = Math.max(...cossacks.map(c=>c.detect));
+    const chased = cossacks.some(c=>c.state==='chase');
+    if(chased){ eye.textContent='ТЕБЕ ПОМІТИЛИ — ТІКАЙ!'; eye.style.background='#d9472b'; }
+    else if(maxD>.25){ eye.textContent='Щось почули...'; eye.style.background='#c7861a'; }
+    else if(p.inBush){ eye.textContent = p.crouch ? 'Сховався в кущах' : 'У кущах (присядь — C)'; eye.style.background='#3f7a3a'; }
+    else { eye.textContent=''; eye.style.background='transparent'; }
+  } else { eye.textContent=''; eye.style.background='transparent'; }
+  const m = ui('msg'); m.textContent = state.msg; m.style.opacity = state.msgT>0 ? 1 : 0;
+  ui('hint').textContent = state.phase==='prep'
+    ? 'WASD — рух · миша — огляд · Shift — біг · C — присісти · F — стрілка · Enter — «готово», випустити козаків'
+    : 'Ховайся в кущах і присідай (C). Протримайся до кінця часу — або повернись до штабу непоміченим!';
+}
+
+let last = performance.now();
+function frame(now){
+  const dt = Math.min(.05, (now-last)/1000); last = now;
+  if(state.mode==='play'){
+    state.t -= dt; state.msgT -= dt;
+    updatePlayer(dt);
+    if(state.mode==='play') updateCossacks(dt);
+    if(state.mode==='play'){
+      if(state.phase==='prep' && state.t<=0){ if(arrows.length===0){ say('Ти не виклав жодної стрілки — козаки знають, де ти!',3); } startSearch(); }
+      else if(state.phase==='search'){
+        if(state.t<=0) endGame(true, 'Козаки шукали '+fmt(SEARCH_TIME)+' і не знайшли тебе.');
+        else if(Math.hypot(player.x-BASE.x,player.z-BASE.z)<5 && SEARCH_TIME-state.t>20 && !cossacks.some(c=>c.state==='chase')) endGame(true, 'Ти непомітно пробрався назад до штабу!');
+      }
+    }
+    state.birdT -= dt; if(state.birdT<0){ SFX.bird(); state.birdT = R(2,7); }
+    updateHUD(); drawMini();
+  } else {
+    camYaw += dt*.05; player.kid.g.visible = state.mode!=='menu';
+  }
+  flag.cloth.rotation.y = Math.sin(now/500)*.25;
+  updateCamera(dt);
+  renderer.render(scene, camera);
+  requestAnimationFrame(frame);
+}
+
+function resize(){ const w=innerWidth, h=innerHeight; renderer.setSize(w,h,false); camera.aspect=w/h; camera.updateProjectionMatrix(); }
+addEventListener('resize', resize); resize();
+
+// ---------------------------------------------------------------- menus
+function showCard(html){ ui('card').innerHTML = html; ui('overlay').style.display='flex'; ui('hud').style.visibility='hidden'; }
+function hideCard(){ ui('overlay').style.display='none'; ui('hud').style.visibility='visible'; }
+function showMenu(){
+  state.mode='menu';
+  showCard(`
+    <h1>Козаки-розбійники</h1>
+    <h2>Дворова гра з дитинства — тепер у 3D-дендропарку</h2>
+    <p>Ти — <b>розбійник</b>. Поки козаки рахують у штабі, шукай <b>палки</b> під деревами і викладай з них
+    <b>стрілки</b> на землі (3 палки = 1 стрілка). За правилами стрілка має бути щонайменше кожні ${LEASH_MAX} метрів.</p>
+    <p>Потім козаки підуть по твоїх стрілках. Сховайся в кущах і протримайся ${fmt(SEARCH_TIME)} хвилини —
+    або непомітно повернись до штабу.</p>
+    <div class="keys">
+      <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span><span>рух, мишею — огляд (клацни по екрану, щоб захопити мишу)</span>
+      <span><kbd>Shift</kbd></span><span>біг (витрачає сили, і тебе чути)</span>
+      <span><kbd>C</kbd></span><span>присісти — тебе гірше видно</span>
+      <span><kbd>F</kbd></span><span>викласти стрілку туди, куди дивишся</span>
+      <span><kbd>Enter</kbd></span><span>«готово» — випустити козаків раніше</span>
+    </div>
+    <div class="row"><span>Складність:</span>
+      ${Object.entries(DIFF).map(([k,d])=>`<button data-d="${k}" class="${k===diffKey?'sel':''}">${d.label}</button>`).join('')}
+    </div>
+    <div class="row"><button id="go" class="sel" style="font-size:18px;padding:12px 28px">Грати</button></div>`);
+  ui('card').querySelectorAll('[data-d]').forEach(b=>b.onclick=()=>{ diffKey=b.dataset.d; showMenu(); });
+  ui('go').onclick = () => startGame();
+}
+function startGame(){
+  audio(); resetGame(); hideCard(); state.mode='play'; last=performance.now();
+  player.kid.g.visible = true;
+  if(!coarse && canvas.requestPointerLock){ try { const r = canvas.requestPointerLock(); if(r && r.catch) r.catch(()=>{}); } catch(e){} }
+}
+addEventListener('keydown', e => { if(e.code==='Escape' && state.mode==='play' && !locked){ /* pointer lock already released */ } });
+
+player.x = BASE.x; player.z = BASE.z-8;
+spawnSticks();
+showMenu();
+requestAnimationFrame(frame);
+window.__k = { state, player, get arrows(){return arrows;}, get cossacks(){return cossacks;}, startSearch, keys, pressedQ, setYaw:v=>camYaw=v };
+</script>
+</body>
+</html>
